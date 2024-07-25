@@ -1,5 +1,6 @@
 import numpy as np
 import cv2 as cv
+import torch
 
 cap = cv.VideoCapture(0)
 
@@ -8,8 +9,17 @@ font = cv.FONT_HERSHEY_SIMPLEX
 font_scale = 1
 color = (255, 255, 255)  # White color
 thickness = 2
-label_1 = "Original camera input"
-label_2 = "Adjusted camera input"
+label_1 = "Original camera output"
+label_2 = "Adjusted camera output"
+label_height = 40  # Height of the label area
+min_movement_area = 500  # Minimum area of movement to consider
+
+# object detection model
+yolo_model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
+
+# background subtraction method
+background_subtractor = cv.createBackgroundSubtractorMOG2()
+
 
 if not cap.isOpened():
     print("Cannot connect to camera")
@@ -21,15 +31,34 @@ while True:
     if not ret:
         print("Can't recieve frame (stream end?). Exiting...")
         break
-    # operations on the frame should be done here
+
     frame_2 = frame.copy()
+    results = yolo_model(frame_2)
+    detections = results.xyxy[0].cpu().numpy()  # xyxy format: (x1, y1, x2, y2, conf, cls)
+
+    fg_mask = background_subtractor.apply(frame_2)
+
+    moving_detections = []
+    for *bbox, conf, cls in detections:
+        x1, y1, x2, y2 = map(int, bbox)
+        roi = fg_mask[y1:y2, x1:x2]
+        movement_area = cv.countNonZero(roi)
+        if movement_area > min_movement_area:
+            moving_detections.append((x1, y1, x2, y2, conf, cls))
+
+    # Draw bounding boxes for moving objects
+    for (x1, y1, x2, y2, conf, cls) in moving_detections:
+        cv.rectangle(frame_2, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        label = f"{yolo_model.names[int(cls)]} {conf:.2f}"
+        cv.putText(frame_2, label, (x1, y1 - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+
+    #frame_2 = results.render()[0]
 
     # Get the size of the frames
     height_1, width_1 = frame.shape[:2]
     height_2, width_2 = frame_2.shape[:2]
 
     # Create a blank image for labels
-    label_height = 40  # Height of the label area
     labeled_frame_1 = np.zeros((height_1 + label_height, width_1, 3), dtype=np.uint8)
     labeled_frame_2 = np.zeros((height_2 + label_height, width_2, 3), dtype=np.uint8)
 
@@ -43,6 +72,8 @@ while True:
 
     # display the resulting frames
     combined_frame = np.vstack((labeled_frame_1, labeled_frame_2))  # Combine two frames horizontally
+
+
     cv.imshow('Combined Output', combined_frame)
     # exit
     if cv.waitKey(1) == ord('q'):

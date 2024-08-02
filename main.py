@@ -63,7 +63,7 @@ def main():
             # Resize the cropped image to minimally cover the segmented area
             segmented_width = x2 - x1 + 1
             segmented_height = y2 - y1 + 1
-            resized_image = cv.resize(cropped_image, (segmented_width, segmented_height))
+            resized_image = cv.resize(replacement_image, (segmented_width, segmented_height))
 
             # Extract the resized alpha channel and RGB channels
             resized_alpha = resized_image[:, :, 3] / 255.0
